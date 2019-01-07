@@ -8,6 +8,12 @@ Catalyst is a lightweight, fast and simple to use webserver written on top of hy
 $ git clone https://github.com/technetos/catalyst.git
 ```
 
+## Building the project
+
+```sh
+$ cargo b
+```
+
 ## Routes
 
 Functions can be used as routes in Catalyst as long as they match the signature
