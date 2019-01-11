@@ -13,7 +13,22 @@ $ git clone https://github.com/technetos/catalyst.git
 ```sh
 $ cargo b
 ```
+## Running the examples
+To run an example use  `$ cargo r --example <name_of_example>`
 
+Lets go ahead and run the `simple_routes` example now:
+```
+$ cargo r --example simple_routes
+```
+
+Navigating to `http://localhost:8000/foo` will present you with the message: 
+```
+{"message":"Greetings earthling"}
+```
+
+Congratulations! You're now up and running with Catalyst.
+
+---
 ## Routes
 
 Functions can be used as routes in Catalyst as long as they match the signature
