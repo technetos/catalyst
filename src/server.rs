@@ -31,6 +31,8 @@ impl<R: RouteHandler> Server<R> {
             .serve(maker)
             .map_err(|e| println!("Server error: {}", e));
 
+        println!("starting server on: {}", addr);
+
         hyper::rt::run(server);
     }
 }

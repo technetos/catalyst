@@ -19,6 +19,7 @@ To run an example use  `$ cargo r --example <name_of_example>`
 Lets go ahead and run the `simple_routes` example now:
 ```
 $ cargo r --example simple_routes
+> starting server on: 127.0.0.1:8000
 ```
 
 Navigating to `http://localhost:8000/foo` will present you with the message: 
