@@ -1,90 +1,92 @@
-use hyper::{header, Body, Method, Request, Response, StatusCode};
+use crate::{
+    request::{Json, Request},
+    response::Response,
+};
+use bytes::Bytes;
+use h2::{self, server::SendResponse, RecvStream};
 use serde_json::json;
 use std::collections::HashMap;
 
-/// # RouteHandler
-///
-/// Any function matching the signature `(&Request<Body>) -> Response<Body>`
-/// can be used as a route handler.  
-pub trait RouteHandler: Send + Sync + 'static {
-    fn respond_to<'r>(&self, req: &'r Request<Body>) -> Response<Body>;
+pub type route_fn = fn(Request<Json>) -> Response;
+
+pub struct Routes {
+    routes: HashMap<(String, String), route_fn>,
 }
 
-impl<F: Send + Sync + 'static> RouteHandler for F
-where
-    for<'r> F: Fn(&'r Request<Body>) -> Response<Body>,
-{
-    fn respond_to<'r>(&self, req: &'r Request<Body>) -> Response<Body> {
-        self(req)
-    }
-}
-
-/// # Route
-///
-/// `Route` represents single route composed of a HTTP method and a handler
-/// function.
-struct Route {
-    /// The HTTP method for the route such as GET, POST, PUT, DELETE, etc.
-    method: Method,
-    /// The function for this route.
-    handler: Box<RouteHandler>,
-}
-
-impl Route {
-    /// Creates a new route.
-    fn new<R: RouteHandler>(method: Method, handler: R) -> Route {
-        Route {
-            method,
-            handler: Box::new(handler),
-        }
-    }
-
-    /// Returns a reference to the HTTP method for this route.  
-    fn method(&self) -> &Method {
-        &self.method
-    }
-}
-
-/// # Router
-///
-/// The `Router` stores routes as an internal `HashMap<URI, Handler>` where
-/// `URI` is the full path to the route and `Handler` is the function called
-/// for that route.   
-///
-/// ### Routing
-///
-/// If there exists a route matching the URI and HTTP method of the request the
-/// `Router` delegates to that route, otherwise the `Router` responds with 404.  
-pub struct Router {
-    routes: HashMap<String, Route>,
-}
-
-impl RouteHandler for Router {
-    fn respond_to<'r>(&self, req: &Request<Body>) -> Response<Body> {
-        match self.routes.get(req.uri().path()) {
-            Some(ref route) if route.method() == req.method() => route.handler.respond_to(req),
-            _ => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::to_vec(&json!({ "error_message":"not found" })).unwrap(),
-                ))
-                .unwrap(),
-        }
-    }
-}
-
-impl Router {
-    /// Creates a new `Router`.  
-    pub fn new() -> Router {
-        Router {
+impl Routes {
+    pub fn new() -> Self {
+        Routes {
             routes: HashMap::new(),
         }
     }
 
-    /// Adds a route to the router given the `path`, `method` and `handler`.  
-    pub fn add_route<R: RouteHandler>(&mut self, path: &str, method: Method, handler: R) {
-        self.routes
-            .insert(String::from(path), Route::new(method, handler));
+    pub fn add(&mut self, uri: &str, method: &str, fn_ptr: route_fn) {
+        self.routes.insert(
+            (String::from(uri), String::from(method)),
+            fn_ptr as route_fn,
+        );
     }
+}
+
+pub(crate) struct Router {
+    routes: HashMap<(String, String), route_fn>,
+}
+
+impl Router {
+    pub(crate) fn new(routes: Routes) -> Self {
+        Router {
+            routes: routes.routes,
+        }
+    }
+
+    pub(crate) fn handle_request(
+        &self,
+        req: http::Request<RecvStream>,
+        mut tx: SendResponse<Bytes>,
+    ) {
+        let mut response = Response::new().content_type("application/json");
+
+        match self.routes.get(&(
+            req.uri().path().to_string(),
+            req.method().as_str().to_owned(),
+        )) {
+            Some(ref fn_ptr) => {
+                let json_req = Request::<Json>::new(req);
+                if let Err(e) = json_req {
+                    let error_res =
+                        response
+                            .status(http::StatusCode::BAD_REQUEST)
+                            .body(Bytes::from(
+                                serde_json::to_vec(&json!({ "error": format!("{}", e) })).unwrap(),
+                            ));
+
+                    send_response(tx, error_res);
+                } else {
+                    send_response(tx, fn_ptr(json_req.unwrap()));
+                }
+            }
+            None => {
+                let error_message = Bytes::from(
+                    serde_json::to_vec(&json!({ "error_message":"not found" })).unwrap(),
+                );
+                let error_res = response
+                    .status(http::StatusCode::NOT_FOUND)
+                    .body(error_message);
+
+                send_response(tx, error_res);
+            }
+        }
+    }
+}
+
+pub(crate) fn send_response(mut tx: SendResponse<Bytes>, res: Response) {
+    if let Err(e) = respond(tx, res) {
+        println!("! error: {:?}", e);
+    }
+}
+
+fn respond(mut tx: SendResponse<Bytes>, res: Response) -> Result<(), Box<std::error::Error>> {
+    let (http_res, body) = res.into_inner()?;
+    tx.send_response(http_res, false)?.send_data(body, true)?;
+    Ok(())
 }
