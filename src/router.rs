@@ -3,9 +3,10 @@ use crate::{
     response::Response,
 };
 use bytes::Bytes;
-use h2::{self, server::SendResponse, RecvStream};
+use futures::future::Future;
+use h2::{self, server::SendResponse};
 use serde_json::json;
-use std::collections::HashMap;
+use std::{collections::HashMap, error::Error as StdError};
 
 pub type route_fn = fn(Request<Json>) -> Response;
 
@@ -41,51 +42,33 @@ impl Router {
 
     pub(crate) fn handle_request(
         &self,
-        req: http::Request<RecvStream>,
-        mut tx: SendResponse<Bytes>,
-    ) {
-        let mut response = Response::new().content_type("application/json");
-
+        req: Request<Json>,
+        tx: SendResponse<Bytes>,
+    ) -> impl Future<Item = (), Error = ()> + Send + 'static {
         match self.routes.get(&(
-            req.uri().path().to_string(),
-            req.method().as_str().to_owned(),
+            req.parts().uri.path().to_string(),
+            req.parts().method.as_str().to_owned(),
         )) {
-            Some(ref fn_ptr) => {
-                let json_req = Request::<Json>::new(req);
-                if let Err(e) = json_req {
-                    let error_res =
-                        response
-                            .status(http::StatusCode::BAD_REQUEST)
-                            .body(Bytes::from(
-                                serde_json::to_vec(&json!({ "error": format!("{}", e) })).unwrap(),
-                            ));
-
-                    send_response(tx, error_res);
-                } else {
-                    send_response(tx, fn_ptr(json_req.unwrap()));
-                }
-            }
+            Some(ref fn_ptr) => futures::future::ok(send_response(tx, fn_ptr(req))),
             None => {
-                let error_message = Bytes::from(
-                    serde_json::to_vec(&json!({ "error_message":"not found" })).unwrap(),
-                );
-                let error_res = response
+                let error_res = Response::new()
+                    .content_type("application/json")
                     .status(http::StatusCode::NOT_FOUND)
-                    .body(error_message);
+                    .body(json_bytes_ok!(json!({ "error_message":"not found" })));
 
-                send_response(tx, error_res);
+                futures::future::ok(send_response(tx, error_res))
             }
         }
     }
 }
 
-pub(crate) fn send_response(mut tx: SendResponse<Bytes>, res: Response) {
+pub(crate) fn send_response(tx: SendResponse<Bytes>, res: Response) {
     if let Err(e) = respond(tx, res) {
         println!("! error: {:?}", e);
     }
 }
 
-fn respond(mut tx: SendResponse<Bytes>, res: Response) -> Result<(), Box<std::error::Error>> {
+fn respond(mut tx: SendResponse<Bytes>, res: Response) -> Result<(), Box<StdError>> {
     let (http_res, body) = res.into_inner()?;
     tx.send_response(http_res, false)?.send_data(body, true)?;
     Ok(())
