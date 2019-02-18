@@ -19,4 +19,4 @@ openssl x509 -req -sha256 -days 3650 \
     -in server.csr -out cert.pem
 
 rm ca_cert.srl server.csr
-openssl pkcs12 -export -out cert.p12 -inkey key.pem -in cert.pem
+#openssl pkcs12 -export -out cert.p12 -inkey key.pem -in cert.pem
