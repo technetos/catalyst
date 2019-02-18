@@ -1,24 +1,43 @@
-use catalyst::router::Router;
-use catalyst::server::Server;
-
-use hyper::{self, header, Body, Method, Request, Response, StatusCode};
+use bytes::Bytes;
 use serde_json::json;
 
-fn main() {
-    let mut router = Router::new();
-    router.add_route("/foo", Method::GET, foo);
-    router.add_route("/bar", Method::POST, foo);
+use std::error::Error;
 
-    let server = Server::new(router);
-    server.start();
+use catalyst::{
+    json_bytes_ok,
+    request::{Json, Request},
+    response::Response,
+    router::Routes,
+    server::start_server,
+};
+
+fn greeting(req: Request<Json>) -> Response {
+    let parts = req.parts();
+    println!("Received {} request on path {}", &parts.method, &parts.uri);
+    Response::new()
+        .status(http::StatusCode::OK)
+        .content_type("application/json")
+        .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })))
 }
 
-pub fn foo(_req: &Request<Body>) -> Response<Body> {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json")
-        .body(Body::from(
-            serde_json::to_vec(&json!({ "message":"Greetings earthling" })).unwrap(),
-        ))
-        .unwrap()
+fn post_json(req: Request<Json>) -> Response {
+    let parts = req.parts();
+    println!("Received {} request on path {}", &parts.method, &parts.uri);
+    println!("Body JSON: {}", req.body().inner());
+    Response::new()
+        .status(http::StatusCode::OK)
+        .content_type("application/json")
+        .body(json_bytes_ok!(json!(true)))
+}
+
+fn main() -> Result<(), Box<Error>> {
+    let mut routes = Routes::new();
+
+    // Add routes to the router.
+    routes.add("/hello-world", "GET", greeting);
+    routes.add("/test-post-json", "POST", post_json);
+
+    // Start the server.
+    start_server(routes)?;
+    Ok(())
 }

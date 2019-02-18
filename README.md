@@ -1,6 +1,6 @@
 # Catalyst
 
-Catalyst is a lightweight, fast and simple to use webserver written on top of hyper.  
+Catalyst is a lightweight, fast and simple to use webserver written on top of tokio, rustls, and h2.  
 
 ## Getting Started
 
@@ -11,55 +11,48 @@ $ git clone https://github.com/technetos/catalyst.git
 ## Building the project
 
 ```sh
-$ cargo b
+$ cargo b --release
 ```
 ## Running the examples
-To run an example use  `$ cargo r --example <name_of_example>`
+To run an example use  `$ cargo r --release --example <name_of_example>`
 
-Lets go ahead and run the `simple_routes` example now:
+To run the `simple_routes` example:
 ```
-$ cargo r --example simple_routes
-> Server running at: 127.0.0.1:8000
+$ cargo r --release --example simple_routes
+Listening on: 127.0.0.1:3000
 ```
+The `simple_routes` example has the following routes
 
-Navigating to `http://127.0.0.1:8000/foo` will present you with the message: 
-```
-{"message":"Greetings earthling"}
-```
+Method | URI | Payload | Expected Response
+--- | --- | --- | ---
+`GET` | `https://127.0.0.1:3000/hello-world` |  | ` { "message": "Greetings earthling!" } `
+`POST` | `https://127.0.0.1:3000/test-post-json` | _json_ | `true`
 
-Congratulations! You're now up and running with Catalyst.
-
----
 ## Routes
 
 Functions can be used as routes in Catalyst as long as they match the signature
-`(&Request) -> Response`
+`(Request<Json>) -> Response`
 
 ## Basic Usage
 
 ```rust
-use catalyst::{router::Router, server::Server};
-use hyper::{self, Body, Method, Request, Response};
-
-fn main() {
-    // Create a new router.
-    let mut router = Router::new();
+fn main() -> Result<(), Box<Error>> {
+    let mut routes = Routes::new();
 
     // Add routes to the router.
-    router.add_route("/foo", Method::GET, foo);
-
-    // Create a new server.
-    let server = Server::new(router);
+    routes.add("/hello-world", "GET", greeting);
 
     // Start the server.
-    server.start();
+    start_server(routes)?;
+    Ok(())
 }
 
-// Since foo has the signature (&Request<Body>) -> Response<Body> we can use it
-// as a route handler.
-pub fn foo(req: &Request<Body>) -> Response<Body> {
-    println!("{:#?}", req);
-    Response::default()
+fn greeting(req: Request<Json>) -> Response {
+    let parts = req.parts();
+    println!("Received {} request on path {}", &parts.method, &parts.uri);
+    Response::new()
+        .status(http::StatusCode::OK)
+        .content_type("application/json")
+        .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })))
 }
-
 ```
