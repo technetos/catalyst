@@ -1,11 +1,16 @@
 use crate::{
-    request::{Json, Request, RequestError},
+    endpoint::{Endpoint, Route},
+    error::Error,
+    request::{HttpRequest, Request},
     response::Response,
-    router::{send_response, Router, Routes},
 };
 use bytes::Bytes;
-use futures::{future::Future, stream::Stream};
-use h2::server::{handshake, SendResponse};
+use futures::future::Future;
+use futures::stream::Stream;
+use h2::{
+    server::{handshake, SendResponse},
+    RecvStream,
+};
 use serde_json::json;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::net::TcpStream;
@@ -17,14 +22,15 @@ use tokio_rustls::{
     TlsAcceptor, TlsStream,
 };
 
-pub fn start_server(routes: Routes) -> Result<(), Box<std::error::Error>> {
+pub fn start_server<E>(_: E) -> Result<(), Box<std::error::Error>>
+where
+    E: Route + Send + Sync + 'static,
+{
     let tls_cfg = Arc::new(tls_config());
 
     // Parse the arguments into an address.
     let addr = format!("{}:{}", "127.0.0.1", "3000");
     let addr = addr.parse::<SocketAddr>()?;
-
-    let router = Arc::new(Router::new(routes));
 
     // Bind to a socket (call listen syscall) at `addr`:`port` awaiting new connections.
     let listener = tokio::net::TcpListener::bind(&addr)?;
@@ -38,10 +44,11 @@ pub fn start_server(routes: Routes) -> Result<(), Box<std::error::Error>> {
         .for_each(move |tcp_socket| {
             tokio::spawn({
                 let future = setup_tls(tcp_socket, tls_cfg.clone());
-                setup_http2(future, router.clone())
+                handle_client_requests::<E, _>(future)
             });
             Ok(())
         });
+
     tokio::run(server);
     Ok(())
 }
@@ -51,26 +58,56 @@ fn setup_tls(
     socket: TcpStream,
     cfg: Arc<ServerConfig>,
 ) -> impl Future<Item = TlsStream<TcpStream, ServerSession>, Error = ()> + Send + 'static {
-    // TODO: Handle tls errors
-    TlsAcceptor::from(cfg).accept(socket).map_err(|e| ())
+    TlsAcceptor::from(cfg)
+        .accept(socket)
+        .map_err(|e| println!("<!> TLS: {:?}", e))
 }
 
-/// Establish a http2 connection.
-fn setup_http2<F>(
-    future: F,
-    router: Arc<Router>,
-) -> impl Future<Item = (), Error = ()> + Send + 'static
+/// Dispatch a request to the endpoint.
+fn handle_request<E, F>(future: F) -> impl Future<Item = Response, Error = Error> + Send + 'static
+where
+    E: Route + Send + 'static,
+    F: Future<Item = Request<E::Body>, Error = Error> + Send + 'static,
+{
+    future.and_then(|request| E::process_request(request))
+}
+
+fn spawn_request_handler<E>(req: http::Request<RecvStream>, res: SendResponse<Bytes>)
+where
+    E: Route + Send + Sync + 'static,
+{
+    let process = {
+        let future = Request::<E::Body>::lift(req);
+        let handler = handle_request::<E, _>(future);
+
+        handler.then(|result| match result {
+            Ok(response) => Ok(send_response(res, response)),
+            Err(e) => {
+                let response = Response::new()
+                    .status(http::StatusCode::INTERNAL_SERVER_ERROR)
+                    .content_type("application/json")
+                    .body(json_bytes_ok!(json!({ "error": format!("{:?}", e) })));
+                send_response(res, response);
+                Ok(())
+            }
+        })
+    };
+    tokio::spawn(process);
+}
+
+fn handle_client_requests<E, F>(future: F) -> impl Future<Item = (), Error = ()> + Send + 'static
 where
     F: Future<Item = TlsStream<TcpStream, ServerSession>, Error = ()> + Send + 'static,
+    E: Route + Send + Sync + 'static,
 {
     future.and_then(move |tls_socket| {
-        handshake(tls_socket)
+        let h2_handshake = handshake(tls_socket);
+
+        let dispatch_request = h2_handshake
             .and_then(move |h2_stream| {
                 h2_stream.for_each(move |(req, tx)| {
-                    // TODO: Add threadpool of workers to consume multiple requests at a time from the
-                    // stream
-                    let future = Request::<Json>::new(req);
-                    handle_request(future, tx, router.clone()).then(|_| Ok(()))
+                    spawn_request_handler::<E>(req, tx);
+                    Ok(())
                 })
             })
             .and_then(|_| {
@@ -82,33 +119,21 @@ where
                     println!("! {}", e);
                 }
                 Ok(())
-            })
+            });
+        tokio::spawn(dispatch_request)
     })
 }
 
-/// Dispatch a request to a route handler or report an error in processing the request.
-fn handle_request<F>(
-    future: F,
-    tx: SendResponse<Bytes>,
-    router: Arc<Router>,
-) -> impl Future<Item = (), Error = ()> + Send + 'static
-where
-    F: Future<Item = Request<Json>, Error = RequestError> + Send + 'static,
-{
-    future.then(move |result| match result {
-        Ok(request) => {
-            router.handle_request(request, tx);
-            Ok(())
-        }
-        Err(e) => {
-            let response = Response::new()
-                .status(http::StatusCode::BAD_REQUEST)
-                .content_type("application/json")
-                .body(json_bytes_ok!(json!({ "error": format!("{:?}", e) })));
-            send_response(tx, response);
-            Ok(())
-        }
-    })
+pub(crate) fn send_response(tx: SendResponse<Bytes>, res: Response) {
+    if let Err(e) = respond(tx, res) {
+        println!("! error: {:?}", e);
+    }
+
+    fn respond(mut tx: SendResponse<Bytes>, res: Response) -> Result<(), Error> {
+        let (http_res, body) = res.into_inner()?;
+        tx.send_response(http_res, false)?.send_data(body, true)?;
+        Ok(())
+    }
 }
 
 fn tls_config() -> ServerConfig {

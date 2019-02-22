@@ -1,5 +1,5 @@
+use crate::error::Error;
 use bytes::Bytes;
-use std::error::Error as StdError;
 
 pub struct Response {
     res: http::response::Builder,
@@ -7,7 +7,7 @@ pub struct Response {
 }
 
 impl Response {
-    pub(crate) fn into_inner(mut self) -> Result<(http::Response<()>, Bytes), Box<StdError>> {
+    pub(crate) fn into_inner(mut self) -> Result<(http::Response<()>, Bytes), Error> {
         let response = self.res.body(())?;
         Ok((response, self.data))
     }
