@@ -4,6 +4,7 @@ use serde_json::json;
 use std::error::Error;
 
 use catalyst::{
+    config::Config,
     json_bytes_ok,
     request::{Json, Request},
     response::Response,
@@ -32,12 +33,13 @@ fn post_json(req: Request<Json>) -> Response {
 
 fn main() -> Result<(), Box<Error>> {
     let mut routes = Routes::new();
+    let config: Config = Config::parse_config()?;
 
     // Add routes to the router.
     routes.add("/hello-world", "GET", greeting);
     routes.add("/test-post-json", "POST", post_json);
 
     // Start the server.
-    start_server(routes)?;
+    start_server(config, routes)?;
     Ok(())
 }

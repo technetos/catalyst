@@ -5,6 +5,7 @@ macro_rules! json_bytes_ok {
     };
 }
 
+pub mod config;
 pub mod request;
 pub mod response;
 pub mod router;

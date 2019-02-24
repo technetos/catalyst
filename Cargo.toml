@@ -16,6 +16,8 @@ http = "0.1"
 futures = "0.1"
 serde = "1.0.82"
 serde_json = "1.0"
+serde_derive = "1.0"
+toml = "0.4.2"
 
 [[example]]
 name = "simple_routes"
