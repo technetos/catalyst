@@ -1,5 +1,7 @@
 # Catalyst
 
+[![CircleCI](https://circleci.com/gh/technetos/catalyst/tree/master.svg?style=svg)](https://circleci.com/gh/technetos/catalyst/tree/master)
+
 Catalyst is a lightweight, fast and simple to use webserver written on top of tokio, rustls, and h2.  
 
 ## Getting Started
