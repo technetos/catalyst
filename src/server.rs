@@ -1,8 +1,8 @@
 use crate::{
+    config::Config,
     endpoint::{Endpoint, Route},
     error::Error,
     request::{HttpRequest, Request},
-    config::Config,
     response::Response,
 };
 use bytes::Bytes;
@@ -59,9 +59,7 @@ fn setup_tls(
     socket: TcpStream,
     cfg: Arc<ServerConfig>,
 ) -> impl Future<Item = TlsStream<TcpStream, ServerSession>, Error = ()> + Send + 'static {
-    TlsAcceptor::from(cfg)
-        .accept(socket)
-        .map_err(|e| println!("<!> TLS: {:?}", e))
+    TlsAcceptor::from(cfg).accept(socket).map_err(|_| ())
 }
 
 /// Dispatch a request to the endpoint.

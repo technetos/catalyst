@@ -6,8 +6,8 @@ use std::error::Error as StdError;
 use catalyst::{
     body::{Json, PlainText},
     boxed,
-    endpoint::{Endpoint, Route, RouteF},
     config::Config,
+    endpoint::{Endpoint, Route, RouteF},
     json_bytes_ok,
     request::{HttpRequest, Request},
     response::Response,

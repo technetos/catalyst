@@ -9,6 +9,7 @@ pub enum Error {
     FromUtf8(std::string::FromUtf8Error),
     Str(String),
     Io(std::io::Error),
+    Toml(toml::de::Error),
 }
 
 impl From<h2::Error> for Error {
@@ -47,6 +48,12 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl From<toml::de::Error> for Error {
+    fn from(e: toml::de::Error) -> Self {
+        Error::Toml(e)
+    }
+}
+
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
@@ -56,6 +63,7 @@ impl fmt::Display for Error {
             Error::FromUtf8(e) => f.write_str(e.description()),
             Error::Str(e) => f.write_str(e),
             Error::Io(e) => f.write_str(e.description()),
+            Error::Toml(e) => f.write_str(e.description()),
         }
     }
 }
@@ -69,6 +77,7 @@ impl StdError for Error {
             Error::FromUtf8(e) => e.description(),
             Error::Str(e) => &e[..],
             Error::Io(e) => e.description(),
+            Error::Toml(e) => e.description(),
         }
     }
 }
