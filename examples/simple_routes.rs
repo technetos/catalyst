@@ -7,6 +7,7 @@ use catalyst::{
     body::{Json, PlainText},
     boxed,
     endpoint::{Endpoint, Route, RouteF},
+    config::Config,
     json_bytes_ok,
     request::{HttpRequest, Request},
     response::Response,
@@ -88,6 +89,7 @@ impl Route for Router {
 
 fn main() -> Result<(), Box<StdError>> {
     // Start the server.
-    start_server(Router)?;
+    let config: Config = Config::parse_config()?;
+    start_server(config, Router)?;
     Ok(())
 }

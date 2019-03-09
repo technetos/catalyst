@@ -2,6 +2,7 @@ use crate::{
     endpoint::{Endpoint, Route},
     error::Error,
     request::{HttpRequest, Request},
+    config::Config,
     response::Response,
 };
 use bytes::Bytes;
@@ -22,14 +23,14 @@ use tokio_rustls::{
     TlsAcceptor, TlsStream,
 };
 
-pub fn start_server<E>(_: E) -> Result<(), Box<std::error::Error>>
+pub fn start_server<E>(config: Config, _: E) -> Result<(), Box<std::error::Error>>
 where
     E: Route + Send + Sync + 'static,
 {
     let tls_cfg = Arc::new(tls_config());
 
     // Parse the arguments into an address.
-    let addr = format!("{}:{}", "127.0.0.1", "3000");
+    let addr = format!("{}:{}", config.address, config.port);
     let addr = addr.parse::<SocketAddr>()?;
 
     // Bind to a socket (call listen syscall) at `addr`:`port` awaiting new connections.
