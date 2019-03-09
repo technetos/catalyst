@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     request::{Json, Request, RequestError},
     response::Response,
     router::{send_response, Router, Routes},
@@ -17,11 +18,11 @@ use tokio_rustls::{
     TlsAcceptor, TlsStream,
 };
 
-pub fn start_server(routes: Routes) -> Result<(), Box<std::error::Error>> {
+pub fn start_server(config: Config, routes: Routes) -> Result<(), Box<std::error::Error>> {
     let tls_cfg = Arc::new(tls_config());
 
     // Parse the arguments into an address.
-    let addr = format!("{}:{}", "127.0.0.1", "3000");
+    let addr = format!("{}:{}", config.address, config.port);
     let addr = addr.parse::<SocketAddr>()?;
 
     let router = Arc::new(Router::new(routes));

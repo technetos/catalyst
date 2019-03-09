@@ -1,0 +1,8 @@
+# Default server address
+address="127.0.0.1"
+# Default server port
+port=3000
+
+# You can specify your own config values using the dotted key group "config"
+# config.key = value
+
