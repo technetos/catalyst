@@ -1,13 +1,11 @@
-use futures::{future::ok as OkFut, future::Future, stream::Stream};
+use crate::error::Error;
+use futures::future::Future;
 use h2::RecvStream;
-use serde_json::json;
 
-pub struct Json(serde_json::Value);
-
-impl Json {
-    pub fn inner(&self) -> &serde_json::Value {
-        &self.0
-    }
+pub trait HttpRequest<T>: Sized + 'static {
+    type Future: Future<Item = Self, Error = Error> + Send + 'static;
+    fn parse(req: Request<RecvStream>) -> Self::Future;
+    fn lift(req: http::Request<RecvStream>) -> Self::Future;
 }
 
 pub struct Request<T> {
@@ -23,52 +21,53 @@ impl<T> Request<T> {
     pub fn body(&self) -> &T {
         &self.body
     }
-}
 
-#[derive(Debug)]
-pub(crate) enum RequestError {
-    SerdeJson(serde_json::Error),
-    H2(h2::Error),
-}
-
-impl From<h2::Error> for RequestError {
-    fn from(e: h2::Error) -> Self {
-        RequestError::H2(e)
+    pub fn into_parts(self) -> (http::request::Parts, T) {
+        (self.parts, self.body)
     }
 }
 
-impl From<serde_json::Error> for RequestError {
-    fn from(e: serde_json::Error) -> Self {
-        RequestError::SerdeJson(e)
-    }
-}
+type RequestF<T> = Box<Future<Item = Request<T>, Error = Error> + Send + 'static>;
 
-type RequestFuture<T> = Box<Future<Item = Request<T>, Error = RequestError> + Send + 'static>;
+impl<T> HttpRequest<T> for Request<T>
+where
+    T: Body + Send + 'static,
+{
+    type Future = RequestF<T>;
 
-impl Request<Json> {
-    pub(crate) fn new(req: http::Request<RecvStream>) -> RequestFuture<Json> {
+    fn parse(req: Request<RecvStream>) -> Self::Future {
         let (parts, body) = req.into_parts();
 
-        if &parts.method != http::Method::GET {
-            Box::new(receive_json(body).then(|result| {
-                Ok(Request::<Json> {
+        use http::Method;
+        match *&parts.method {
+            Method::POST | Method::PUT | Method::PATCH => {
+                boxed!(T::parse(body).then(|result| Ok(Request::<T> {
                     parts,
-                    body: Json(result?),
-                })
-            }))
-        } else {
-            Box::new(OkFut(Request::<Json> {
+                    body: result?,
+                })))
+            }
+            _ => boxed!(T::default(body).then(|result| Ok(Request::<T> {
                 parts,
-                body: Json(json!({})),
-            }))
+                body: result?,
+            }))),
         }
+    }
+
+    fn lift(req: http::Request<RecvStream>) -> Self::Future {
+        let (parts, body) = req.into_parts();
+
+        boxed!(T::parse(body).then(|result| Ok(Request::<T> {
+            parts,
+            body: result?
+        })))
     }
 }
 
-fn receive_json(
-    stream: RecvStream,
-) -> impl Future<Item = serde_json::Value, Error = RequestError> + Send + 'static {
-    stream
-        .concat2()
-        .then(|result| Ok(serde_json::from_slice(&result?)?))
+pub type BodyF<T> = Box<Future<Item = T, Error = Error> + Send + 'static>;
+
+pub trait Body: Sized + 'static {
+    type Future: Future<Item = Self, Error = Error> + Send + 'static;
+
+    fn parse(stream: RecvStream) -> Self::Future;
+    fn default(stream: RecvStream) -> Self::Future;
 }

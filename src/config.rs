@@ -1,15 +1,9 @@
-use toml;
-
-#[macro_use]
+use crate::error::Error;
 use serde_derive::Deserialize;
-
 use std::collections::HashMap;
-
 use std::fs::File;
 use std::io::Read;
-
-use std::error::Error;
-pub use toml::value::Value;
+use toml::{self, value::Value};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -22,7 +16,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn parse_config() -> Result<Config, Box<Error>> {
+    pub fn parse_config() -> Result<Config, Error> {
         let mut config_file = File::open("Catalyst.toml")?;
         let mut config_string = String::new();
         config_file.read_to_string(&mut config_string)?;
