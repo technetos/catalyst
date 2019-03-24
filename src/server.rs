@@ -23,7 +23,7 @@ use tokio_rustls::{
     TlsAcceptor, TlsStream,
 };
 
-pub fn start_server<E>(config: Config, _: E) -> Result<(), Box<std::error::Error>>
+pub fn start_server<E>(config: Config) -> Result<(), Box<std::error::Error>>
 where
     E: Route + Send + Sync + 'static,
 {

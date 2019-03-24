@@ -13,6 +13,7 @@ use catalyst::{
     response::Response,
     server::start_server,
 };
+use router_macro::routes;
 
 struct Index;
 
@@ -46,50 +47,23 @@ impl Route for Profile {
         let res = Response::new()
             .status(http::StatusCode::OK)
             .content_type("application/json")
-            .body(json_bytes_ok!(
-                json!({ "message": "Welcome to the profile" })
-            ));
+            .body(json_bytes_ok!(json!(true)));
 
         boxed!(OkFut(res))
     }
 }
 
-pub struct Router;
-
-impl Route for Router {
-    type Body = h2::RecvStream;
-    type Future = RouteF<Response>;
-
-    fn handle_request(req: Request<Self::Body>) -> Self::Future {
-        let parts = &req.parts();
-        match parts.uri.path() {
-            "/" if parts.method == http::Method::GET => {
-                type IndexBody = <Index as Route>::Body;
-
-                boxed!(Request::<IndexBody>::parse(req)
-                    .and_then(|request| Index::process_request(request)))
-            }
-            "/profile" if parts.method == http::Method::POST => {
-                type ProfileBody = <Profile as Route>::Body;
-
-                boxed!(Request::<ProfileBody>::parse(req)
-                    .and_then(|request| Profile::process_request(request)))
-            }
-            _ => {
-                let res = Response::new()
-                    .status(http::StatusCode::NOT_FOUND)
-                    .content_type("application/json")
-                    .body(json_bytes_ok!(json!({ "message": "not found" })));
-
-                boxed!(OkFut(res))
-            }
-        }
-    }
+#[routes]
+struct Router {
+    #[get("/")]
+    index: Index,
+    #[post("/profile")]
+    profile: Profile,
 }
 
 fn main() -> Result<(), Box<StdError>> {
     // Start the server.
     let config: Config = Config::parse_config()?;
-    start_server(config, Router)?;
+    start_server::<Router>(config)?;
     Ok(())
 }
