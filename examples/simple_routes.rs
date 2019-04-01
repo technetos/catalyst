@@ -7,63 +7,47 @@ use catalyst::{
     body::{Json, PlainText},
     boxed,
     config::Config,
-    endpoint::{Endpoint, Route, RouteF},
     json_bytes_ok,
-    request::{HttpRequest, Request},
+    request::Request,
     response::Response,
+    route::{Route, RouteF},
+    routing_table::RoutingTable,
     server::start_server,
 };
-use router_macro::routes;
 
-struct Index;
+struct HomePage;
 
-impl Route for Index {
-    type Body = PlainText;
-    type Future = RouteF<Response>;
-
-    fn handle_request(req: Request<Self::Body>) -> Self::Future {
-        let parts = req.parts();
-        println!("Received {} request on path {}", &parts.method, &parts.uri);
-
-        let res = Response::new()
-            .status(http::StatusCode::OK)
-            .content_type("application/json")
-            .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })));
-
-        boxed!(OkFut(res))
-    }
-}
-
-struct Profile;
-
-impl Route for Profile {
+impl Route for HomePage {
     type Body = Json;
     type Future = RouteF<Response>;
 
     fn handle_request(req: Request<Self::Body>) -> Self::Future {
         let parts = req.parts();
-        println!("Received {} request on path {}", &parts.method, &parts.uri);
+
+        let user_settings = req.body().inner();
 
         let res = Response::new()
             .status(http::StatusCode::OK)
             .content_type("application/json")
-            .body(json_bytes_ok!(json!(true)));
+            .body(json_bytes_ok!(json!("hello!")));
 
         boxed!(OkFut(res))
     }
 }
 
-#[routes]
-struct Router {
-    #[get("/")]
-    index: Index,
-    #[post("/profile")]
-    profile: Profile,
-}
+use http::Method;
 
 fn main() -> Result<(), Box<StdError>> {
-    // Start the server.
+    // Configure the server.
     let config: Config = Config::parse_config()?;
-    start_server::<Router>(config)?;
+
+    // Define the routes.
+    let mut routing_table = RoutingTable::new();
+    routing_table
+        .at("/index", Method::GET)
+        .attach(HomePage);
+        
+    // Start the server.
+    start_server(config, routing_table)?;
     Ok(())
 }

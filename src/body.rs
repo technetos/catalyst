@@ -1,7 +1,16 @@
-use crate::request::{Body, BodyF};
+use crate::error::Error;
 use futures::{future::ok as OkFut, future::Future, stream::Stream};
 use h2::RecvStream;
 use serde_json::json;
+
+pub type BodyF<T> = Box<Future<Item = T, Error = Error> + Send + 'static>;
+
+pub trait Body: Sized + 'static {
+    type Future: Future<Item = Self, Error = Error> + Send + 'static;
+
+    fn parse(stream: RecvStream) -> Self::Future;
+    fn default(stream: RecvStream) -> Self::Future;
+}
 
 pub struct Json(serde_json::Value);
 

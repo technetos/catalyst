@@ -1,9 +1,10 @@
 use crate::{
     config::Config,
-    endpoint::{Endpoint, Route},
     error::Error,
     request::{HttpRequest, Request},
     response::Response,
+    route::Router,
+    routing_table::RoutingTable,
 };
 use bytes::Bytes;
 use futures::future::Future;
@@ -23,11 +24,9 @@ use tokio_rustls::{
     TlsAcceptor, TlsStream,
 };
 
-pub fn start_server<E>(config: Config) -> Result<(), Box<std::error::Error>>
-where
-    E: Route + Send + Sync + 'static,
-{
+pub fn start_server(config: Config, routes: RoutingTable) -> Result<(), Box<std::error::Error>> {
     let tls_cfg = Arc::new(tls_config());
+    let table = Arc::new(routes);
 
     // Parse the arguments into an address.
     let addr = format!("{}:{}", config.address, config.port);
@@ -45,7 +44,7 @@ where
         .for_each(move |tcp_socket| {
             tokio::spawn({
                 let future = setup_tls(tcp_socket, tls_cfg.clone());
-                handle_client_requests::<E, _>(future)
+                handle_client_requests(future, table.clone())
             });
             Ok(())
         });
@@ -62,22 +61,15 @@ fn setup_tls(
     TlsAcceptor::from(cfg).accept(socket).map_err(|_| ())
 }
 
-/// Dispatch a request to the endpoint.
-fn handle_request<E, F>(future: F) -> impl Future<Item = Response, Error = Error> + Send + 'static
-where
-    E: Route + Send + 'static,
-    F: Future<Item = Request<E::Body>, Error = Error> + Send + 'static,
-{
-    future.and_then(|request| E::process_request(request))
-}
-
-fn spawn_request_handler<E>(req: http::Request<RecvStream>, res: SendResponse<Bytes>)
-where
-    E: Route + Send + Sync + 'static,
-{
-    let process = {
-        let future = Request::<E::Body>::lift(req);
-        let handler = handle_request::<E, _>(future);
+fn spawn_request_handler(
+    req: http::Request<RecvStream>,
+    res: SendResponse<Bytes>,
+    table: Arc<RoutingTable>,
+) {
+    tokio::spawn({
+        let routing_table = table.clone();
+        let future = Request::<h2::RecvStream>::lift(req);
+        let handler = future.and_then(|request| Router::route_request(request, routing_table));
 
         handler.then(|result| match result {
             Ok(response) => Ok(send_response(res, response)),
@@ -90,14 +82,15 @@ where
                 Ok(())
             }
         })
-    };
-    tokio::spawn(process);
+    });
 }
 
-fn handle_client_requests<E, F>(future: F) -> impl Future<Item = (), Error = ()> + Send + 'static
+fn handle_client_requests<F>(
+    future: F,
+    table: Arc<RoutingTable>,
+) -> impl Future<Item = (), Error = ()> + Send + 'static
 where
     F: Future<Item = TlsStream<TcpStream, ServerSession>, Error = ()> + Send + 'static,
-    E: Route + Send + Sync + 'static,
 {
     future.and_then(move |tls_socket| {
         let h2_handshake = handshake(tls_socket);
@@ -105,7 +98,7 @@ where
         let dispatch_request = h2_handshake
             .and_then(move |h2_stream| {
                 h2_stream.for_each(move |(req, tx)| {
-                    spawn_request_handler::<E>(req, tx);
+                    spawn_request_handler(req, tx, table.clone());
                     Ok(())
                 })
             })

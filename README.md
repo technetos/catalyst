@@ -27,41 +27,45 @@ The `simple_routes` example has the following routes
 
 Method | URI | Payload | Expected Response
 --- | --- | --- | ---
-`GET` | `https://127.0.0.1:3000/` |  | ` { "message": "Greetings earthling!" } `
-`POST` | `https://127.0.0.1:3000/profile` | JSON | `true`
+`GET` | `https://127.0.0.1:3000/index` | JSON | `"hello!"`
 
 ## Basic Usage
 
 ```rust
-struct Index;
+struct HomePage;
 
-impl Route for Index {
-    type Body = PlainText;
+impl Route for HomePage {
+    type Body = Json;
     type Future = RouteF<Response>;
 
     fn handle_request(req: Request<Self::Body>) -> Self::Future {
         let parts = req.parts();
-        println!("Received {} request on path {}", &parts.method, &parts.uri);
+
+        let user_settings = req.body().inner();
 
         let res = Response::new()
             .status(http::StatusCode::OK)
             .content_type("application/json")
-            .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })));
+            .body(json_bytes_ok!(json!("hello!")));
 
         boxed!(OkFut(res))
     }
 }
 
-#[routes]
-struct Router {
-    #[get("/")]
-    index: Index,
-}
+use http::Method;
 
 fn main() -> Result<(), Box<StdError>> {
-    // Start the server.
+    // Configure the server.
     let config: Config = Config::parse_config()?;
-    start_server::<Router>(config)?;
+
+    // Define the routes.
+    let mut routing_table = RoutingTable::new();
+    routing_table
+        .at("/index", Method::GET)
+        .attach(HomePage);
+        
+    // Start the server.
+    start_server(config, routing_table)?;
     Ok(())
 }
 ```
