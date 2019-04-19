@@ -14,8 +14,9 @@ macro_rules! json_bytes_ok {
 
 pub mod body;
 pub mod config;
-pub mod endpoint;
+pub mod route;
 pub mod error;
 pub mod request;
 pub mod response;
 pub mod server;
+pub mod routing_table;

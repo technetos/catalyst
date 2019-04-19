@@ -1,17 +1,15 @@
 use crate::error::Error;
 use serde_derive::Deserialize;
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::Read;
+use std::{fs::File, io::Read, collections::HashMap};
 use toml::{self, value::Value};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    //// Server address
+    // Server address
     pub(crate) address: String,
-    //// Server port
+    // Server port
     pub(crate) port: u16,
-    //// User defined configuration values
+    // User defined configuration values
     pub(crate) config: Option<HashMap<String, Value>>,
 }
 

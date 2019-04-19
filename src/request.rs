@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::{body::Body, error::Error};
 use futures::future::Future;
 use h2::RecvStream;
 
@@ -21,10 +21,6 @@ impl<T> Request<T> {
     pub fn body(&self) -> &T {
         &self.body
     }
-
-    pub fn into_parts(self) -> (http::request::Parts, T) {
-        (self.parts, self.body)
-    }
 }
 
 type RequestF<T> = Box<Future<Item = Request<T>, Error = Error> + Send + 'static>;
@@ -36,17 +32,17 @@ where
     type Future = RequestF<T>;
 
     fn parse(req: Request<RecvStream>) -> Self::Future {
-        let (parts, body) = req.into_parts();
+        let Request { parts, body } = req;
 
         use http::Method;
         match *&parts.method {
             Method::POST | Method::PUT | Method::PATCH => {
-                boxed!(T::parse(body).then(|result| Ok(Request::<T> {
+                boxed!(T::parse(body).then(move |result| Ok(Request::<T> {
                     parts,
                     body: result?,
                 })))
             }
-            _ => boxed!(T::default(body).then(|result| Ok(Request::<T> {
+            _ => boxed!(T::default(body).then(move |result| Ok(Request::<T> {
                 parts,
                 body: result?,
             }))),
@@ -61,13 +57,4 @@ where
             body: result?
         })))
     }
-}
-
-pub type BodyF<T> = Box<Future<Item = T, Error = Error> + Send + 'static>;
-
-pub trait Body: Sized + 'static {
-    type Future: Future<Item = Self, Error = Error> + Send + 'static;
-
-    fn parse(stream: RecvStream) -> Self::Future;
-    fn default(stream: RecvStream) -> Self::Future;
 }

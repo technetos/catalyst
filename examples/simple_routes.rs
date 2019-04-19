@@ -7,89 +7,47 @@ use catalyst::{
     body::{Json, PlainText},
     boxed,
     config::Config,
-    endpoint::{Endpoint, Route, RouteF},
     json_bytes_ok,
-    request::{HttpRequest, Request},
+    request::Request,
     response::Response,
+    route::{Route, RouteF},
+    routing_table::RoutingTable,
     server::start_server,
 };
 
-struct Index;
+struct HomePage;
 
-impl Route for Index {
-    type Body = PlainText;
-    type Future = RouteF<Response>;
-
-    fn handle_request(req: Request<Self::Body>) -> Self::Future {
-        let parts = req.parts();
-        println!("Received {} request on path {}", &parts.method, &parts.uri);
-
-        let res = Response::new()
-            .status(http::StatusCode::OK)
-            .content_type("application/json")
-            .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })));
-
-        boxed!(OkFut(res))
-    }
-}
-
-struct Profile;
-
-impl Route for Profile {
+impl Route for HomePage {
     type Body = Json;
     type Future = RouteF<Response>;
 
     fn handle_request(req: Request<Self::Body>) -> Self::Future {
         let parts = req.parts();
-        println!("Received {} request on path {}", &parts.method, &parts.uri);
+
+        let user_settings = req.body().inner();
 
         let res = Response::new()
             .status(http::StatusCode::OK)
             .content_type("application/json")
-            .body(json_bytes_ok!(
-                json!({ "message": "Welcome to the profile" })
-            ));
+            .body(json_bytes_ok!(json!("hello!")));
 
         boxed!(OkFut(res))
     }
 }
 
-pub struct Router;
-
-impl Route for Router {
-    type Body = h2::RecvStream;
-    type Future = RouteF<Response>;
-
-    fn handle_request(req: Request<Self::Body>) -> Self::Future {
-        let parts = &req.parts();
-        match parts.uri.path() {
-            "/" if parts.method == http::Method::GET => {
-                type IndexBody = <Index as Route>::Body;
-
-                boxed!(Request::<IndexBody>::parse(req)
-                    .and_then(|request| Index::process_request(request)))
-            }
-            "/profile" if parts.method == http::Method::POST => {
-                type ProfileBody = <Profile as Route>::Body;
-
-                boxed!(Request::<ProfileBody>::parse(req)
-                    .and_then(|request| Profile::process_request(request)))
-            }
-            _ => {
-                let res = Response::new()
-                    .status(http::StatusCode::NOT_FOUND)
-                    .content_type("application/json")
-                    .body(json_bytes_ok!(json!({ "message": "not found" })));
-
-                boxed!(OkFut(res))
-            }
-        }
-    }
-}
+use http::Method;
 
 fn main() -> Result<(), Box<StdError>> {
-    // Start the server.
+    // Configure the server.
     let config: Config = Config::parse_config()?;
-    start_server(config, Router)?;
+
+    // Define the routes.
+    let mut routing_table = RoutingTable::new();
+    routing_table
+        .at("/index", Method::GET)
+        .attach(HomePage);
+        
+    // Start the server.
+    start_server(config, routing_table)?;
     Ok(())
 }

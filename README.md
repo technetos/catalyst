@@ -27,34 +27,45 @@ The `simple_routes` example has the following routes
 
 Method | URI | Payload | Expected Response
 --- | --- | --- | ---
-`GET` | `https://127.0.0.1:3000/hello-world` |  | ` { "message": "Greetings earthling!" } `
-`POST` | `https://127.0.0.1:3000/test-post-json` | _json_ | `true`
-
-## Routes
-
-Functions can be used as routes in Catalyst as long as they match the signature
-`(Request<Json>) -> Response`
+`GET` | `https://127.0.0.1:3000/index` | JSON | `"hello!"`
 
 ## Basic Usage
 
 ```rust
-fn main() -> Result<(), Box<Error>> {
-    let mut routes = Routes::new();
+struct HomePage;
 
-    // Add routes to the router.
-    routes.add("/hello-world", "GET", greeting);
+impl Route for HomePage {
+    type Body = Json;
+    type Future = RouteF<Response>;
 
-    // Start the server.
-    start_server(routes)?;
-    Ok(())
+    fn handle_request(req: Request<Self::Body>) -> Self::Future {
+        let parts = req.parts();
+
+        let user_settings = req.body().inner();
+
+        let res = Response::new()
+            .status(http::StatusCode::OK)
+            .content_type("application/json")
+            .body(json_bytes_ok!(json!("hello!")));
+
+        boxed!(OkFut(res))
+    }
 }
 
-fn greeting(req: Request<Json>) -> Response {
-    let parts = req.parts();
-    println!("Received {} request on path {}", &parts.method, &parts.uri);
-    Response::new()
-        .status(http::StatusCode::OK)
-        .content_type("application/json")
-        .body(json_bytes_ok!(json!({ "message": "Greetings earthling!" })))
+use http::Method;
+
+fn main() -> Result<(), Box<StdError>> {
+    // Configure the server.
+    let config: Config = Config::parse_config()?;
+
+    // Define the routes.
+    let mut routing_table = RoutingTable::new();
+    routing_table
+        .at("/index", Method::GET)
+        .attach(HomePage);
+        
+    // Start the server.
+    start_server(config, routing_table)?;
+    Ok(())
 }
 ```
